@@ -173,10 +173,17 @@ async function getAllUsers(req, res) {
 
 async function getUserStats(req, res) {
   try {
+    console.log('getUserStats called, userId:', req.userId);
+    
     // Only admin can access user statistics
     const currentUserId = req.userId;
+    if (!currentUserId) {
+      console.error('No userId in request');
+      return res.status(401).json({ error: 'unauthorized' });
+    }
+    
     const isMySQL = process.env.MYSQL_URL || (process.env.DATABASE_URL && process.env.DATABASE_URL.startsWith('mysql://'));
-    const isPostgres = process.env.DATABASE_URL && process.env.DATABASE_URL.startsWith('postgresql://');
+    const isPostgres = process.env.DATABASE_URL && typeof process.env.DATABASE_URL === 'string' && process.env.DATABASE_URL.startsWith('postgresql://');
     
     // Get current user to check if admin
     let currentUser;
@@ -189,33 +196,40 @@ async function getUserStats(req, res) {
       currentUser = await dbModule.getAsync('SELECT user_type FROM users WHERE id = ?', [currentUserId]);
     }
     
-    if (!currentUser || currentUser.user_type !== 'admin') {
+    console.log('Current user:', currentUser);
+    
+    if (!currentUser) {
+      console.error('User not found with id:', currentUserId);
+      return res.status(404).json({ error: 'user not found' });
+    }
+    
+    if (currentUser.user_type !== 'admin') {
+      console.warn('Non-admin user tried to access stats:', currentUser.user_type);
       return res.status(403).json({ error: 'forbidden - admin access required' });
     }
     
     // Get user counts by type
     let stats;
+    let allUsers;
+    
     if (isMySQL) {
-      const allUsers = await dbModule.allAsync('SELECT user_type FROM users');
-      const employees = allUsers.filter(u => u.user_type === 'employee').length;
-      const assistants = allUsers.filter(u => u.user_type === 'assistant').length;
-      const admins = allUsers.filter(u => u.user_type === 'admin').length;
-      stats = { employees, assistants, admins, total: allUsers.length };
+      allUsers = await dbModule.allAsync('SELECT user_type FROM users');
+      console.log('MySQL - All users:', allUsers);
     } else if (isPostgres) {
       const result = await dbModule.query('SELECT user_type FROM users');
-      const allUsers = result.rows;
-      const employees = allUsers.filter(u => u.user_type === 'employee').length;
-      const assistants = allUsers.filter(u => u.user_type === 'assistant').length;
-      const admins = allUsers.filter(u => u.user_type === 'admin').length;
-      stats = { employees, assistants, admins, total: allUsers.length };
+      allUsers = result.rows;
+      console.log('Postgres - All users:', allUsers);
     } else {
-      const allUsers = await dbModule.allAsync('SELECT user_type FROM users');
-      const employees = allUsers.filter(u => u.user_type === 'employee').length;
-      const assistants = allUsers.filter(u => u.user_type === 'assistant').length;
-      const admins = allUsers.filter(u => u.user_type === 'admin').length;
-      stats = { employees, assistants, admins, total: allUsers.length };
+      allUsers = await dbModule.allAsync('SELECT user_type FROM users');
+      console.log('SQLite - All users:', allUsers);
     }
     
+    const employees = allUsers.filter(u => u.user_type === 'employee').length;
+    const assistants = allUsers.filter(u => u.user_type === 'assistant').length;
+    const admins = allUsers.filter(u => u.user_type === 'admin').length;
+    stats = { employees, assistants, admins, total: allUsers.length };
+    
+    console.log('Returning stats:', stats);
     res.json({ stats });
   } catch (err) {
     console.error('Get user stats error:', err);

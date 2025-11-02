@@ -1582,37 +1582,69 @@
 
             // Admin Dashboard Methods
             async updateAdminStats() {
-                if (!this.token) return;
+                if (!this.token) {
+                    console.warn('No token available for updateAdminStats');
+                    return;
+                }
                 
                 try {
                     // Fetch user statistics from API
+                    console.log('Fetching user stats from /api/auth/stats');
                     const response = await fetch('/api/auth/stats', {
                         headers: {
-                            'Authorization': `Bearer ${this.token}`
+                            'Authorization': `Bearer ${this.token}`,
+                            'Content-Type': 'application/json'
                         }
                     });
                     
+                    console.log('Stats API response status:', response.status);
+                    
                     if (response.ok) {
                         const data = await response.json();
+                        console.log('Stats API data:', data);
                         const stats = data.stats || { employees: 0, assistants: 0, admins: 0, total: 0 };
                         
-                        document.getElementById('totalEmployees').textContent = stats.employees || 0;
-                        document.getElementById('totalAssistants').textContent = stats.assistants || 0;
+                        const employeesEl = document.getElementById('totalEmployees');
+                        const assistantsEl = document.getElementById('totalAssistants');
+                        
+                        if (employeesEl) {
+                            employeesEl.textContent = stats.employees || 0;
+                            console.log('Updated totalEmployees to:', stats.employees);
+                        } else {
+                            console.error('Element totalEmployees not found');
+                        }
+                        
+                        if (assistantsEl) {
+                            assistantsEl.textContent = stats.assistants || 0;
+                            console.log('Updated totalAssistants to:', stats.assistants);
+                        } else {
+                            console.error('Element totalAssistants not found');
+                        }
                     } else {
+                        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+                        console.error('Stats API error:', response.status, errorData);
+                        
                         // Fallback to 0 if API call fails
-                        document.getElementById('totalEmployees').textContent = 0;
-                        document.getElementById('totalAssistants').textContent = 0;
+                        const employeesEl = document.getElementById('totalEmployees');
+                        const assistantsEl = document.getElementById('totalAssistants');
+                        if (employeesEl) employeesEl.textContent = 0;
+                        if (assistantsEl) assistantsEl.textContent = 0;
                     }
                 } catch (error) {
                     console.error('Error loading user stats:', error);
-                    document.getElementById('totalEmployees').textContent = 0;
-                    document.getElementById('totalAssistants').textContent = 0;
+                    const employeesEl = document.getElementById('totalEmployees');
+                    const assistantsEl = document.getElementById('totalAssistants');
+                    if (employeesEl) employeesEl.textContent = 0;
+                    if (assistantsEl) assistantsEl.textContent = 0;
                 }
                 
                 // Load tasks count from local storage or API
                 const activeTasks = this.tasks.filter(t => t.status === 'active');
-                document.getElementById('activeTasks').textContent = activeTasks.length;
-                document.getElementById('currentWeek').textContent = this.currentWeek;
+                const activeTasksEl = document.getElementById('activeTasks');
+                if (activeTasksEl) activeTasksEl.textContent = activeTasks.length;
+                
+                const currentWeekEl = document.getElementById('currentWeek');
+                if (currentWeekEl) currentWeekEl.textContent = this.currentWeek;
             }
 
             selectAdminWeek(week) {
