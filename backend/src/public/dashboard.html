@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><title>Dashboard</title><link rel="stylesheet" href="/main.css"/></head>
+<body>
+  <div class="header">
+    <div id="welcome">Welcome</div>
+    <div><button id="btn-logout" class="btn">Logout</button></div>
+  </div>
+  <div class="container">
+    <div class="card">
+      <h3 id="card-title">Your tasks</h3>
+      <div id="tasks-list"></div>
+      <div style="margin-top:12px">
+        <input id="task-title" placeholder="Task title" />
+        <input id="task-desc" placeholder="Task description" />
+        <button id="btn-add" class="btn">Add Task</button>
+      </div>
+    </div>
+  </div>
+
+<script src="/lang.js"></script>
+<script>
+  const lang = localStorage.getItem('site_lang') || 'en';
+  const L = LANG[lang] || LANG.en;
+  document.getElementById('welcome').innerText = L.welcome + ', ' + (localStorage.getItem('user_name') || '');
+  document.getElementById('btn-logout').innerText = L.logout;
+  document.getElementById('card-title').innerText = L.welcome + ' - Tasks';
+
+  const token = localStorage.getItem('token');
+  if (!token) location.href = '/login.html';
+
+  async function loadTasks(){
+    const res = await fetch('/api/tasks', {headers:{Authorization: 'Bearer ' + token}});
+    if (!res.ok) { if (res.status === 401) { alert('Session expired'); localStorage.removeItem('token'); location.href='/login.html'; } return; }
+    const j = await res.json();
+    const list = document.getElementById('tasks-list');
+    list.innerHTML = '';
+    j.tasks.forEach(t => {
+      const div = document.createElement('div');
+      div.innerText = t.title + (t.description ? ' — ' + t.description : '');
+      list.appendChild(div);
+    });
+  }
+  document.getElementById('btn-add').addEventListener('click', async ()=>{
+    const title = document.getElementById('task-title').value;
+    const desc = document.getElementById('task-desc').value;
+    const res = await fetch('/api/tasks', {method:'POST', headers:{'Content-Type':'application/json', Authorization: 'Bearer ' + token}, body:JSON.stringify({title, description: desc})});
+    if (!res.ok) { alert('Failed'); return; }
+    document.getElementById('task-title').value=''; document.getElementById('task-desc').value='';
+    await loadTasks();
+  });
+
+  document.getElementById('btn-logout').addEventListener('click', ()=>{
+    localStorage.removeItem('token'); localStorage.removeItem('user_name'); location.href='/login.html';
+  });
+
+  loadTasks();
+</script>
+</body>
+</html>
