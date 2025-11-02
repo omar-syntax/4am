@@ -1268,17 +1268,22 @@
                 }
             }
 
-            loadUserDashboard() {
+            async loadUserDashboard() {
                 // Ensure type is set correctly
                 const userType = this.currentUser.type || this.currentUser.user_type || 'employee';
                 this.currentUser.type = userType;
                 
+                // Load users from database for all dashboards
+                if (this.token) {
+                    await this.fetchUsersFromAPI();
+                }
+                
                 switch (userType) {
                     case 'admin':
-                        this.showAdminDashboard();
+                        await this.showAdminDashboard();
                         break;
                     case 'assistant':
-                        this.showAssistantDashboard();
+                        await this.showAssistantDashboard();
                         break;
                     case 'employee':
                     default:
@@ -1366,18 +1371,29 @@
                 document.getElementById('registerSection').classList.remove('hidden');
             }
 
-            showAdminDashboard() {
+            async showAdminDashboard() {
                 this.hideAllSections();
                 document.getElementById('adminDashboard').classList.remove('hidden');
+                
+                // Load users from database first
+                await this.fetchUsersFromAPI();
+                
+                // Then update stats and load other data
                 this.updateAdminStats();
                 this.loadEmployeeFilterOptions();
                 this.loadAdminActiveTasks();
             }
 
-            showAssistantDashboard() {
+            async showAssistantDashboard() {
                 this.hideAllSections();
                 document.getElementById('assistantDashboard').classList.remove('hidden');
                 document.getElementById('assistantCurrentWeek').textContent = this.currentWeek;
+                
+                // Load users from database first
+                if (this.token) {
+                    await this.fetchUsersFromAPI();
+                }
+                
                 this.updateAssistantStats();
                 this.loadCreatedTasks();
                 this.loadAssistantMyTasks();
@@ -1665,21 +1681,8 @@
                 if (!filterSelect || !this.token) return;
 
                 try {
-                    // Fetch users from API
-                    const response = await fetch('/api/auth/users', {
-                        headers: {
-                            'Authorization': `Bearer ${this.token}`
-                        }
-                    });
-
-                    let users = [];
-                    if (response.ok) {
-                        const data = await response.json();
-                        users = data.users || [];
-                    } else {
-                        // Fallback to local storage if API fails
-                        users = this.users;
-                    }
+                    // Use the fetchUsersFromAPI method which handles caching
+                    const users = await this.fetchUsersFromAPI();
 
                     const employees = users.filter(u => (u.user_type || u.type) === 'employee');
                     const assistants = users.filter(u => (u.user_type || u.type) === 'assistant');
@@ -1723,14 +1726,17 @@
                 const searchTerm = document.getElementById('adminTaskSearch');
                 if (searchTerm && searchTerm.value.trim()) {
                     const term = searchTerm.value.trim().toLowerCase();
-                    activeTasks = activeTasks.filter(t => {
-                        const assignedUser = this.users.find(u => u.id === t.assignedTo);
-                        const createdBy = this.users.find(u => u.id === t.createdBy);
+                    activeTasks =                     activeTasks.filter(t => {
+                        const assignedUser = this.users.find(u => u.id === t.assignedTo || u.id == t.assignedTo);
+                        const createdBy = this.users.find(u => u.id === t.createdBy || u.id == t.createdBy);
+                        
+                        const assignedName = assignedUser ? (assignedUser.name || assignedUser.fullName || assignedUser.email || '').toLowerCase() : '';
+                        const createdByName = createdBy ? (createdBy.name || createdBy.fullName || createdBy.email || '').toLowerCase() : '';
 
                         return t.title.toLowerCase().includes(term) ||
                             t.description.toLowerCase().includes(term) ||
-                            (assignedUser && assignedUser.fullName.toLowerCase().includes(term)) ||
-                            (createdBy && createdBy.fullName.toLowerCase().includes(term));
+                            assignedName.includes(term) ||
+                            createdByName.includes(term);
                     });
                 }
 
@@ -1759,9 +1765,9 @@
                 // Count tasks by employee
                 const employeeTaskCounts = {};
                 activeTasks.forEach(task => {
-                    const user = this.users.find(u => u.id === task.assignedTo);
+                    const user = this.users.find(u => u.id === task.assignedTo || u.id == task.assignedTo);
                     if (user) {
-                        const key = user.fullName;
+                        const key = user.name || user.fullName || user.email || 'غير محدد';
                         employeeTaskCounts[key] = (employeeTaskCounts[key] || 0) + 1;
                     }
                 });
@@ -1799,8 +1805,11 @@
             }
 
             createAdminTaskHTML(task) {
-                const assignedUser = this.users.find(u => u.id === task.assignedTo);
-                const createdBy = this.users.find(u => u.id === task.createdBy);
+                const assignedUser = this.users.find(u => u.id === task.assignedTo || u.id == task.assignedTo);
+                const createdBy = this.users.find(u => u.id === task.createdBy || u.id == task.createdBy);
+                
+                const assignedUserName = assignedUser ? (assignedUser.name || assignedUser.fullName || assignedUser.email || 'غير محدد') : 'غير محدد';
+                const createdByName = createdBy ? (createdBy.name || createdBy.fullName || createdBy.email || 'غير محدد') : 'غير محدد';
 
                 return `
                     <div class="task-item">
@@ -1811,9 +1820,9 @@
                         <p class="task-description">${task.description}</p>
                         <div class="task-meta">
                             <span class="task-week">الأسبوع ${task.week}</span>
-                            <span><strong>الموظف المسؤول:</strong> ${assignedUser ? assignedUser.fullName : 'غير محدد'}</span>
+                            <span><strong>الموظف المسؤول:</strong> ${assignedUserName}</span>
                             ${assignedUser && assignedUser.department ? `<span><strong>القسم:</strong> ${this.getDepartmentName(assignedUser.department)}</span>` : ''}
-                            <span><strong>أُنشئت بواسطة:</strong> ${createdBy ? createdBy.fullName : 'غير محدد'}</span>
+                            <span><strong>أُنشئت بواسطة:</strong> ${createdByName}</span>
                             <span><strong>تاريخ الإنشاء:</strong> ${new Date(task.createdAt).toLocaleDateString('ar-EG')}</span>
                             <span class="task-status ${task.status}">${this.getStatusText(task.status)}</span>
                         </div>
@@ -1833,16 +1842,19 @@
                 const task = this.tasks.find(t => t.id === taskId);
                 if (!task) return;
 
-                const assignedUser = this.users.find(u => u.id === task.assignedTo);
-                const createdBy = this.users.find(u => u.id === task.createdBy);
+                const assignedUser = this.users.find(u => u.id === task.assignedTo || u.id == task.assignedTo);
+                const createdBy = this.users.find(u => u.id === task.createdBy || u.id == task.createdBy);
+                
+                const assignedUserName = assignedUser ? (assignedUser.name || assignedUser.fullName || assignedUser.email || 'غير محدد') : 'غير محدد';
+                const createdByName = createdBy ? (createdBy.name || createdBy.fullName || createdBy.email || 'غير محدد') : 'غير محدد';
 
                 const modal = this.createModal('تفاصيل المهمة', `
                     <div class="task-details">
                         <h4>${task.title}</h4>
                         <p><strong>الوصف:</strong> ${task.description}</p>
-                        <p><strong>الموظف المسؤول:</strong> ${assignedUser ? assignedUser.fullName : 'غير محدد'}</p>
+                        <p><strong>الموظف المسؤول:</strong> ${assignedUserName}</p>
                         ${assignedUser && assignedUser.department ? `<p><strong>القسم:</strong> ${this.getDepartmentName(assignedUser.department)}</p>` : ''}
-                        <p><strong>أُنشئت بواسطة:</strong> ${createdBy ? createdBy.fullName : 'غير محدد'}</p>
+                        <p><strong>أُنشئت بواسطة:</strong> ${createdByName}</p>
                         <p><strong>الأسبوع:</strong> ${task.week}</p>
                         <p><strong>الأولوية:</strong> ${this.getPriorityText(task.priority)}</p>
                         <p><strong>الحالة:</strong> ${this.getStatusText(task.status)}</p>
@@ -1865,7 +1877,8 @@
                 }
             }
 
-            showCreateTaskModal() {
+            async showCreateTaskModal() {
+                // Show modal with loading users
                 const modal = this.createModal('إنشاء مهمة جديدة', `
                     <form id="createTaskForm">
                         <div class="input-group">
@@ -1879,8 +1892,7 @@
                         <div class="input-group">
                             <label for="assignTo">تعيين إلى</label>
                             <select id="assignTo" required>
-                                <option value="">اختر المستخدم</option>
-                                ${this.getUserOptions()}
+                                <option value="">جاري تحميل المستخدمين...</option>
                             </select>
                         </div>
                         <div class="input-group">
@@ -1904,20 +1916,35 @@
                     </form>
                 `);
 
+                // Load users and populate dropdown
+                try {
+                    const userOptions = await this.getUserOptions();
+                    const assignToSelect = document.getElementById('assignTo');
+                    if (assignToSelect) {
+                        assignToSelect.innerHTML = '<option value="">اختر المستخدم</option>' + userOptions;
+                    }
+                } catch (error) {
+                    console.error('Error loading user options:', error);
+                    const assignToSelect = document.getElementById('assignTo');
+                    if (assignToSelect) {
+                        assignToSelect.innerHTML = '<option value="">حدث خطأ أثناء تحميل المستخدمين</option>';
+                    }
+                }
+
                 document.getElementById('createTaskForm').addEventListener('submit', (e) => {
                     e.preventDefault();
                     this.createTask(e);
                     this.closeModal(modal);
                 });
             }
-            showIncentivesModal() {
+            async showIncentivesModal() {
+                // Show modal with loading users
                 const modal = this.createModal('إدارة الحوافز والخصومات', `
                     <form id="incentiveForm">
                         <div class="input-group">
                             <label for="incentiveUser">الموظف</label>
                             <select id="incentiveUser" required>
-                                <option value="">اختر الموظف</option>
-                                ${this.getEmployeeOptions()}
+                                <option value="">جاري تحميل الموظفين...</option>
                             </select>
                         </div>
                         <div class="input-group">
@@ -1938,6 +1965,21 @@
                         <button type="submit" class="btn btn-primary">إضافة</button>
                     </form>
                 `);
+
+                // Load employees and populate dropdown
+                try {
+                    const employeeOptions = await this.getEmployeeOptions();
+                    const incentiveUserSelect = document.getElementById('incentiveUser');
+                    if (incentiveUserSelect) {
+                        incentiveUserSelect.innerHTML = '<option value="">اختر الموظف</option>' + employeeOptions;
+                    }
+                } catch (error) {
+                    console.error('Error loading employee options:', error);
+                    const incentiveUserSelect = document.getElementById('incentiveUser');
+                    if (incentiveUserSelect) {
+                        incentiveUserSelect.innerHTML = '<option value="">حدث خطأ أثناء تحميل الموظفين</option>';
+                    }
+                }
 
                 document.getElementById('incentiveForm').addEventListener('submit', (e) => {
                     e.preventDefault();
@@ -1972,15 +2014,31 @@
                 `);
             }
 
-            showUsersModal() {
+            async showUsersModal() {
+                // Show loading message first
                 const modal = this.createModal('إدارة المستخدمين', `
                     <div class="users-content">
                         <h3>قائمة المستخدمين</h3>
-                        <div class="users-list">
-                            ${this.getUsersList()}
+                        <div class="users-list" id="usersListContent">
+                            <p>جاري تحميل المستخدمين...</p>
                         </div>
                     </div>
                 `);
+
+                // Fetch and display users
+                try {
+                    const usersList = await this.getUsersList();
+                    const usersListContent = document.getElementById('usersListContent');
+                    if (usersListContent) {
+                        usersListContent.innerHTML = usersList || '<p>لا يوجد مستخدمين</p>';
+                    }
+                } catch (error) {
+                    console.error('Error loading users list:', error);
+                    const usersListContent = document.getElementById('usersListContent');
+                    if (usersListContent) {
+                        usersListContent.innerHTML = '<p>حدث خطأ أثناء تحميل المستخدمين</p>';
+                    }
+                }
             }
 
             async createTask(e) {
@@ -2086,9 +2144,8 @@
                 myTasksList.innerHTML = myTasks.map(task => this.createTaskHTML(task, true)).join('');
             }
 
-            showCreateEmployeeTaskModal() {
-                const employees = this.users.filter(u => u.type === 'employee');
-
+            async showCreateEmployeeTaskModal() {
+                // Show modal with loading employees
                 const modal = this.createModal('إنشاء مهمة للموظفين', `
                     <form id="createEmployeeTaskForm">
                         <div class="input-group">
@@ -2102,10 +2159,7 @@
                         <div class="input-group">
                             <label for="empAssignTo">تعيين إلى الموظف</label>
                             <select id="empAssignTo" required>
-                                <option value="">اختر الموظف</option>
-                                ${employees.map(emp => `
-                                    <option value="${emp.id}">${emp.fullName} (${this.getDepartmentName(emp.department)})</option>
-                                `).join('')}
+                                <option value="">جاري تحميل الموظفين...</option>
                             </select>
                         </div>
                         <div class="input-group">
@@ -2128,6 +2182,21 @@
                         <button type="submit" class="btn btn-primary">إنشاء المهمة</button>
                     </form>
                 `);
+
+                // Load employees and populate dropdown
+                try {
+                    const employeeOptions = await this.getEmployeeOptions();
+                    const empAssignToSelect = document.getElementById('empAssignTo');
+                    if (empAssignToSelect) {
+                        empAssignToSelect.innerHTML = '<option value="">اختر الموظف</option>' + employeeOptions;
+                    }
+                } catch (error) {
+                    console.error('Error loading employee options:', error);
+                    const empAssignToSelect = document.getElementById('empAssignTo');
+                    if (empAssignToSelect) {
+                        empAssignToSelect.innerHTML = '<option value="">حدث خطأ أثناء تحميل الموظفين</option>';
+                    }
+                }
 
                 document.getElementById('createEmployeeTaskForm').addEventListener('submit', (e) => {
                     e.preventDefault();
@@ -2216,7 +2285,8 @@
             }
 
             createIncentiveHTML(incentive) {
-                const createdBy = this.users.find(u => u.id === incentive.createdBy);
+                const createdBy = this.users.find(u => u.id === incentive.createdBy || u.id == incentive.createdBy);
+                const createdByName = createdBy ? (createdBy.name || createdBy.fullName || createdBy.email || 'غير محدد') : 'غير محدد';
                 const isBonus = incentive.type === 'bonus';
 
                 return `
@@ -2232,7 +2302,7 @@
                         </div>
                         <p class="incentive-reason">${incentive.reason}</p>
                         <div class="incentive-meta">
-                            <span>من: ${createdBy ? createdBy.fullName : 'غير محدد'}</span>
+                            <span>من: ${createdByName}</span>
                             <span>${new Date(incentive.createdAt).toLocaleDateString('ar-EG')}</span>
                         </div>
                     </div>
@@ -2241,8 +2311,11 @@
 
             // Common Methods
             createTaskHTML(task, isMyTask = false) {
-                const assignedUser = this.users.find(u => u.id === task.assignedTo);
-                const createdBy = this.users.find(u => u.id === task.createdBy);
+                const assignedUser = this.users.find(u => u.id === task.assignedTo || u.id == task.assignedTo);
+                const createdBy = this.users.find(u => u.id === task.createdBy || u.id == task.createdBy);
+                
+                const assignedUserName = assignedUser ? (assignedUser.name || assignedUser.fullName || assignedUser.email || 'غير محدد') : 'غير محدد';
+                const createdByName = createdBy ? (createdBy.name || createdBy.fullName || createdBy.email || 'غير محدد') : 'غير محدد';
 
                 return `
                     <div class="task-item">
@@ -2253,8 +2326,8 @@
                         <p class="task-description">${task.description}</p>
                         <div class="task-meta">
                             <span class="task-week">الأسبوع ${task.week}</span>
-                            <span>مُكلف: ${assignedUser ? assignedUser.fullName : 'غير محدد'}</span>
-                            ${isMyTask ? `<span>من: ${createdBy ? createdBy.fullName : 'غير محدد'}</span>` : ''}
+                            <span>مُكلف: ${assignedUserName}</span>
+                            ${isMyTask ? `<span>من: ${createdByName}</span>` : ''}
                             <span class="task-status ${task.status}">${this.getStatusText(task.status)}</span>
                         </div>
                         ${isMyTask && task.status === 'active' ? `
@@ -2298,30 +2371,94 @@
                 }
             }
 
-            getUserOptions() {
-                return this.users
-                    .filter(u => u.type !== 'admin')
-                    .map(u => `<option value="${u.id}">${u.fullName} (${u.type === 'employee' ? this.getDepartmentName(u.department) : 'مساعد'})</option>`)
+            async fetchUsersFromAPI() {
+                if (!this.token) {
+                    console.warn('No token available for fetchUsersFromAPI');
+                    return this.users; // Fallback to localStorage
+                }
+
+                try {
+                    const response = await fetch('/api/auth/users', {
+                        headers: {
+                            'Authorization': `Bearer ${this.token}`,
+                            'Content-Type': 'application/json'
+                        }
+                    });
+
+                    if (response.ok) {
+                        const data = await response.json();
+                        const apiUsers = data.users || [];
+                        
+                        // Convert API users format to local format
+                        const formattedUsers = apiUsers.map(u => ({
+                            id: u.id,
+                            fullName: u.name || u.email,
+                            name: u.name,
+                            email: u.email,
+                            type: u.user_type || u.type || 'employee',
+                            user_type: u.user_type || 'employee',
+                            department: u.department || null
+                        }));
+
+                        // Update local users array
+                        this.users = formattedUsers;
+                        console.log('Fetched users from API:', formattedUsers.length);
+                        return formattedUsers;
+                    } else {
+                        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+                        console.error('Failed to fetch users:', response.status, errorData);
+                        return this.users; // Fallback to localStorage
+                    }
+                } catch (error) {
+                    console.error('Error fetching users from API:', error);
+                    return this.users; // Fallback to localStorage
+                }
+            }
+
+            async getUserOptions() {
+                // Fetch users from API first
+                const users = await this.fetchUsersFromAPI();
+                return users
+                    .filter(u => (u.user_type || u.type) !== 'admin')
+                    .map(u => {
+                        const name = u.name || u.fullName || u.email;
+                        const type = u.user_type || u.type || 'employee';
+                        const dept = u.department || '';
+                        return `<option value="${u.id}">${name}${type === 'employee' && dept ? ' (' + this.getDepartmentName(dept) + ')' : type === 'assistant' ? ' (مساعد)' : ''}</option>`;
+                    })
                     .join('');
             }
 
-            getEmployeeOptions() {
-                return this.users
-                    .filter(u => u.type === 'employee')
-                    .map(u => `<option value="${u.id}">${u.fullName} (${this.getDepartmentName(u.department)})</option>`)
+            async getEmployeeOptions() {
+                // Fetch users from API first
+                const users = await this.fetchUsersFromAPI();
+                return users
+                    .filter(u => (u.user_type || u.type) === 'employee')
+                    .map(u => {
+                        const name = u.name || u.fullName || u.email;
+                        const dept = u.department || '';
+                        return `<option value="${u.id}">${name}${dept ? ' (' + this.getDepartmentName(dept) + ')' : ''}</option>`;
+                    })
                     .join('');
             }
 
-            getUsersList() {
-                return this.users
-                    .filter(u => u.type !== 'admin')
-                    .map(u => `
-                        <div class="user-item">
-                            <span>${u.fullName}</span>
-                            <span>${u.email}</span>
-                            <span>${u.type === 'employee' ? this.getDepartmentName(u.department) : 'مساعد'}</span>
-                        </div>
-                    `).join('');
+            async getUsersList() {
+                // Fetch users from API first
+                const users = await this.fetchUsersFromAPI();
+                return users
+                    .filter(u => (u.user_type || u.type) !== 'admin')
+                    .map(u => {
+                        const name = u.name || u.fullName || u.email;
+                        const type = u.user_type || u.type || 'employee';
+                        return `
+                            <div class="user-item">
+                                <span>${name}</span>
+                                <span>${u.email}</span>
+                                <span>${type === 'employee' ? this.getDepartmentName(u.department || '') : 'مساعد'}</span>
+                            </div>
+                        `;
+                    })
+                    .join('');
             }
 
             getDepartmentName(department) {
