@@ -14,26 +14,45 @@ Railway provides the easiest deployment experience with automatic builds and dat
 
 2. **Create New Project**
    - Click "New Project"
-   - Select "Deploy from GitHub repo" or "Deploy from Dockerfile"
+   - Select "Deploy from GitHub repo"
    - Connect your repository
 
-3. **Add PostgreSQL Database** (Recommended for production)
+3. **Configure Root Directory** (IMPORTANT!)
+   - After connecting the repo, go to your service settings
+   - Click on the service → "Settings" tab
+   - Under "Root Directory", set it to: `backend`
+   - This tells Railway where your application code is located
+
+4. **Add PostgreSQL Database** (Recommended for production)
    - Click "New" → "Database" → "Add PostgreSQL"
    - Railway automatically sets `DATABASE_URL` environment variable
 
-4. **Configure Environment Variables**
-   - Go to your project settings
+5. **Configure Environment Variables**
+   - Go to your service → "Variables" tab
    - Add the following variables:
      - `JWT_SECRET`: Generate a secure random string (required)
-     - `PORT`: Railway sets this automatically, but you can override it
+       ```bash
+       # Generate a secure secret (run in terminal):
+       node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+       ```
+     - `PORT`: Railway sets this automatically (don't override unless needed)
      - `DATABASE_URL`: Automatically set if you added PostgreSQL (optional)
+     - `NODE_ENV`: Set to `production`
 
-5. **Deploy**
-   - Railway will automatically build and deploy from your Dockerfile
-   - Or run: `railway up` from your backend directory
+6. **Configure Build Settings**
+   - In service settings → "Build" tab
+   - Build Command: Leave empty (Railway will use Dockerfile)
+   - Start Command: `node src/index.js` (or leave empty, Dockerfile handles it)
+   - Dockerfile Path: `Dockerfile` (should be `backend/Dockerfile` automatically)
 
-6. **Access Your Application**
+7. **Deploy**
+   - Railway will automatically detect the Dockerfile in the backend folder
+   - Click "Deploy" or push to your connected GitHub branch
+   - Watch the build logs for any errors
+
+8. **Access Your Application**
    - Railway provides a public URL automatically
+   - Click "Settings" → "Generate Domain" if no domain is shown
    - Access your app at `https://your-app.railway.app`
 
 ## Other Deployment Options
