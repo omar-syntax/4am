@@ -4,7 +4,7 @@ async function listTasks(req, res) {
   try {
     const userId = req.userId;
     const { week_start } = req.query;
-    const isPostgres = process.env.DATABASE_URL && process.env.DATABASE_URL.startsWith('postgresql://');
+    const isPostgres = process.env.DATABASE_URL && (process.env.DATABASE_URL.startsWith('postgresql://') || process.env.DATABASE_URL.startsWith('postgres://'));
     const isMySQL = process.env.MYSQL_URL || (process.env.DATABASE_URL && process.env.DATABASE_URL.startsWith('mysql://'));
 
     if (isPostgres) {
@@ -37,7 +37,7 @@ async function createTask(req, res) {
     const { title, description, week_start } = req.body;
     const userId = req.userId;
     if (!title) return res.status(400).json({ error: 'title required' });
-    if (process.env.DATABASE_URL && process.env.DATABASE_URL.startsWith('postgresql://')) {
+    if (process.env.DATABASE_URL && (process.env.DATABASE_URL.startsWith('postgresql://') || process.env.DATABASE_URL.startsWith('postgres://'))) {
       const result = await dbModule.query('INSERT INTO tasks(user_id,title,description,week_start) VALUES($1,$2,$3,$4) RETURNING id,title,description,status,week_start,assigned_by,created_at,completed_at', [userId, title, description || null, week_start || null]);
       res.json({ task: result.rows[0] });
     } else if (process.env.MYSQL_URL || (process.env.DATABASE_URL && process.env.DATABASE_URL.startsWith('mysql://'))) {
@@ -65,7 +65,7 @@ async function assignTaskToUser(req, res) {
     if (!title) return res.status(400).json({ error: 'title required' });
 
     // authorize admin
-    const isPostgres = process.env.DATABASE_URL && process.env.DATABASE_URL.startsWith('postgresql://');
+    const isPostgres = process.env.DATABASE_URL && (process.env.DATABASE_URL.startsWith('postgresql://') || process.env.DATABASE_URL.startsWith('postgres://'));
     const isMySQL = process.env.MYSQL_URL || (process.env.DATABASE_URL && process.env.DATABASE_URL.startsWith('mysql://'));
     let currentUser;
     if (isPostgres) {
@@ -107,7 +107,7 @@ async function completeTask(req, res) {
   try {
     const userId = req.userId;
     const { id } = req.params;
-    const isPostgres = process.env.DATABASE_URL && process.env.DATABASE_URL.startsWith('postgresql://');
+    const isPostgres = process.env.DATABASE_URL && (process.env.DATABASE_URL.startsWith('postgresql://') || process.env.DATABASE_URL.startsWith('postgres://'));
     const isMySQL = process.env.MYSQL_URL || (process.env.DATABASE_URL && process.env.DATABASE_URL.startsWith('mysql://'));
 
     // ensure task belongs to user

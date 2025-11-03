@@ -134,7 +134,7 @@ if (MYSQL_URL || (DATABASE_URL && DATABASE_URL.startsWith('mysql://'))) {
       return rows[0] || null;
     }
   };
-} else if (DATABASE_URL && typeof DATABASE_URL === 'string' && DATABASE_URL.startsWith('postgresql://')) {
+} else if (DATABASE_URL && typeof DATABASE_URL === 'string' && (DATABASE_URL.startsWith('postgresql://') || DATABASE_URL.startsWith('postgres://'))) {
   // Use Postgres
   const { Pool } = require('pg');
   const pool = new Pool({ connectionString: DATABASE_URL });
