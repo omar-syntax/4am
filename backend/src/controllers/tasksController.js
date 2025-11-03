@@ -11,19 +11,19 @@ async function listTasks(req, res) {
       const params = [userId];
       let where = 'WHERE user_id = $1';
       if (week_start) { where += ' AND week_start = $2'; params.push(week_start); }
-      const result = await dbModule.query(`SELECT id,title,description,status,week_start,assigned_by,created_at,completed_at FROM tasks ${where} ORDER BY created_at DESC`, params);
+      const result = await dbModule.query(`SELECT id,user_id,title,description,status,week_start,assigned_by,created_at,completed_at FROM tasks ${where} ORDER BY created_at DESC`, params);
       res.json({ tasks: result.rows });
     } else if (isMySQL) {
       const params = [userId];
       let where = 'WHERE user_id = ?';
       if (week_start) { where += ' AND week_start = ?'; params.push(week_start); }
-      const rows = await dbModule.allAsync(`SELECT id,title,description,status,week_start,assigned_by,created_at,completed_at FROM tasks ${where} ORDER BY created_at DESC`, params);
+      const rows = await dbModule.allAsync(`SELECT id,user_id,title,description,status,week_start,assigned_by,created_at,completed_at FROM tasks ${where} ORDER BY created_at DESC`, params);
       res.json({ tasks: rows });
     } else {
       const params = [userId];
       let where = 'WHERE user_id = ?';
       if (week_start) { where += ' AND week_start = ?'; params.push(week_start); }
-      const rows = await dbModule.allAsync(`SELECT id,title,description,status,week_start,assigned_by,created_at,completed_at FROM tasks ${where} ORDER BY created_at DESC`, params);
+      const rows = await dbModule.allAsync(`SELECT id,user_id,title,description,status,week_start,assigned_by,created_at,completed_at FROM tasks ${where} ORDER BY created_at DESC`, params);
       res.json({ tasks: rows });
     }
   } catch (err) {
@@ -38,17 +38,17 @@ async function createTask(req, res) {
     const userId = req.userId;
     if (!title) return res.status(400).json({ error: 'title required' });
     if (process.env.DATABASE_URL && (process.env.DATABASE_URL.startsWith('postgresql://') || process.env.DATABASE_URL.startsWith('postgres://'))) {
-      const result = await dbModule.query('INSERT INTO tasks(user_id,title,description,week_start) VALUES($1,$2,$3,$4) RETURNING id,title,description,status,week_start,assigned_by,created_at,completed_at', [userId, title, description || null, week_start || null]);
+      const result = await dbModule.query('INSERT INTO tasks(user_id,title,description,week_start) VALUES($1,$2,$3,$4) RETURNING id,user_id,title,description,status,week_start,assigned_by,created_at,completed_at', [userId, title, description || null, week_start || null]);
       res.json({ task: result.rows[0] });
     } else if (process.env.MYSQL_URL || (process.env.DATABASE_URL && process.env.DATABASE_URL.startsWith('mysql://'))) {
       const info = await dbModule.runAsync('INSERT INTO tasks(user_id,title,description,week_start) VALUES(?,?,?,?)', [userId, title, description || null, week_start || null]);
       const id = info.lastID;
-      const task = await dbModule.getAsync('SELECT id,title,description,status,week_start,assigned_by,created_at,completed_at FROM tasks WHERE id = ?', [id]);
+      const task = await dbModule.getAsync('SELECT id,user_id,title,description,status,week_start,assigned_by,created_at,completed_at FROM tasks WHERE id = ?', [id]);
       res.json({ task });
     } else {
       const info = await dbModule.runAsync('INSERT INTO tasks(user_id,title,description,week_start) VALUES(?,?,?,?)', [userId, title, description || null, week_start || null]);
       const id = info.lastID;
-      const task = await dbModule.getAsync('SELECT id,title,description,status,week_start,assigned_by,created_at,completed_at FROM tasks WHERE id = ?', [id]);
+      const task = await dbModule.getAsync('SELECT id,user_id,title,description,status,week_start,assigned_by,created_at,completed_at FROM tasks WHERE id = ?', [id]);
       res.json({ task });
     }
   } catch (err) {
@@ -82,19 +82,19 @@ async function assignTaskToUser(req, res) {
 
     if (isPostgres) {
       const result = await dbModule.query(
-        'INSERT INTO tasks(user_id,title,description,week_start,assigned_by) VALUES($1,$2,$3,$4,$5) RETURNING id,title,description,status,week_start,assigned_by,created_at,completed_at',
+        'INSERT INTO tasks(user_id,title,description,week_start,assigned_by) VALUES($1,$2,$3,$4,$5) RETURNING id,user_id,title,description,status,week_start,assigned_by,created_at,completed_at',
         [user_id, title, description || null, week_start || null, adminId]
       );
       res.json({ task: result.rows[0] });
     } else if (isMySQL) {
       const info = await dbModule.runAsync('INSERT INTO tasks(user_id,title,description,week_start,assigned_by) VALUES(?,?,?,?,?)', [user_id, title, description || null, week_start || null, adminId]);
       const id = info.lastID;
-      const task = await dbModule.getAsync('SELECT id,title,description,status,week_start,assigned_by,created_at,completed_at FROM tasks WHERE id = ?', [id]);
+      const task = await dbModule.getAsync('SELECT id,user_id,title,description,status,week_start,assigned_by,created_at,completed_at FROM tasks WHERE id = ?', [id]);
       res.json({ task });
     } else {
       const info = await dbModule.runAsync('INSERT INTO tasks(user_id,title,description,week_start,assigned_by) VALUES(?,?,?,?,?)', [user_id, title, description || null, week_start || null, adminId]);
       const id = info.lastID;
-      const task = await dbModule.getAsync('SELECT id,title,description,status,week_start,assigned_by,created_at,completed_at FROM tasks WHERE id = ?', [id]);
+      const task = await dbModule.getAsync('SELECT id,user_id,title,description,status,week_start,assigned_by,created_at,completed_at FROM tasks WHERE id = ?', [id]);
       res.json({ task });
     }
   } catch (err) {
@@ -122,15 +122,15 @@ async function completeTask(req, res) {
 
     if (isPostgres) {
       await dbModule.query('UPDATE tasks SET status = $1, completed_at = NOW() WHERE id = $2', ['completed', id]);
-      const result = await dbModule.query('SELECT id,title,description,status,week_start,assigned_by,created_at,completed_at FROM tasks WHERE id = $1', [id]);
+      const result = await dbModule.query('SELECT id,user_id,title,description,status,week_start,assigned_by,created_at,completed_at FROM tasks WHERE id = $1', [id]);
       res.json({ task: result.rows[0] });
     } else if (isMySQL) {
       await dbModule.runAsync('UPDATE tasks SET status = ?, completed_at = NOW() WHERE id = ?', ['completed', id]);
-      const updated = await dbModule.getAsync('SELECT id,title,description,status,week_start,assigned_by,created_at,completed_at FROM tasks WHERE id = ?', [id]);
+      const updated = await dbModule.getAsync('SELECT id,user_id,title,description,status,week_start,assigned_by,created_at,completed_at FROM tasks WHERE id = ?', [id]);
       res.json({ task: updated });
     } else {
       await dbModule.runAsync('UPDATE tasks SET status = ?, completed_at = CURRENT_TIMESTAMP WHERE id = ?', ['completed', id]);
-      const updated = await dbModule.getAsync('SELECT id,title,description,status,week_start,assigned_by,created_at,completed_at FROM tasks WHERE id = ?', [id]);
+      const updated = await dbModule.getAsync('SELECT id,user_id,title,description,status,week_start,assigned_by,created_at,completed_at FROM tasks WHERE id = ?', [id]);
       res.json({ task: updated });
     }
   } catch (err) {
