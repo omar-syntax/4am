@@ -1303,6 +1303,10 @@
                 if (this.token && (userType === 'admin' || userType === 'assistant')) {
                     await this.fetchUsersFromAPI();
                 }
+                // Ensure tasks are loaded from API before rendering dashboards
+                if (this.token) {
+                    await this.loadTasksFromAPI();
+                }
                 
                 switch (userType) {
                     case 'admin':
@@ -1922,16 +1926,28 @@
                 `);
             }
 
-            deleteTask(taskId) {
-                if (confirm('هل أنت متأكد من حذف هذه المهمة؟')) {
-                    const taskIndex = this.tasks.findIndex(t => t.id === taskId);
-                    if (taskIndex !== -1) {
-                        this.tasks.splice(taskIndex, 1);
-                        this.saveTasks();
-                        this.showMessage('تم حذف المهمة بنجاح', 'success');
-                        this.updateAdminStats();
-                        this.loadAdminActiveTasks();
+            async deleteTask(taskId) {
+                if (!confirm('هل أنت متأكد من حذف هذه المهمة؟')) return;
+                try {
+                    if (!this.token) { this.showMessage('غير مصرح', 'error'); return; }
+                    const resp = await fetch(`/api/tasks/${taskId}`, { method: 'DELETE', headers: { 'Authorization': `Bearer ${this.token}` } });
+                    if (!resp.ok) {
+                        const j = await resp.json().catch(()=>({}));
+                        this.showMessage(j.error || 'فشل حذف المهمة', 'error');
+                        return;
                     }
+                    // Refresh tasks from API to sync all views
+                    await this.loadTasksFromAPI();
+                    this.showMessage('تم حذف المهمة بنجاح', 'success');
+                    this.updateAdminStats();
+                    this.loadAdminActiveTasks();
+                    if (this.currentUser.type === 'employee') {
+                        this.updateEmployeeStats();
+                        this.loadWeeklyTasks();
+                    }
+                } catch (e) {
+                    console.error('Delete task error:', e);
+                    this.showMessage('حدث خطأ أثناء حذف المهمة', 'error');
                 }
             }
 
@@ -2345,20 +2361,24 @@
                 this.loadWeeklyTasks();
             }
 
-            markTaskCompleted(taskId) {
+            async updateTaskStatus(taskId, status) {
                 const token = this.token;
                 if (!token) {
                     this.showMessage('يجب تسجيل الدخول أولاً', 'error');
                     return;
                 }
-                // Find task for optimistic UI update
-                const idx = this.tasks.findIndex(t => t.id == taskId);
-                const doLocalUpdate = () => {
-                    if (idx !== -1) {
-                        this.tasks[idx].status = 'completed';
-                        this.tasks[idx].completedAt = new Date().toISOString();
-                        this.saveTasks();
+                try {
+                    const resp = await fetch(`/api/tasks/${taskId}/status`, {
+                        method: 'PATCH',
+                        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ status })
+                    });
+                    if (!resp.ok) {
+                        const j = await resp.json().catch(()=>({}));
+                        this.showMessage(j.error || 'فشل تحديث الحالة', 'error');
+                        return;
                     }
+                    await this.loadTasksFromAPI();
                     if (this.currentUser.type === 'employee') {
                         this.updateEmployeeStats();
                         this.loadWeeklyTasks();
@@ -2370,18 +2390,15 @@
                     if (document.getElementById('adminDashboard') && !document.getElementById('adminDashboard').classList.contains('hidden')) {
                         this.loadAdminActiveTasks();
                     }
-                };
-                // Call backend to persist completion
-                fetch(`/api/tasks/${taskId}/complete`, {
-                    method: 'PATCH',
-                    headers: { 'Authorization': `Bearer ${token}` }
-                }).then(res => res.json().catch(() => ({}))).then(j => {
-                    doLocalUpdate();
-                    this.loadTasksFromAPI();
-                }).catch(err => {
-                    console.error('Error completing task:', err);
-                    doLocalUpdate();
-                });
+                    this.showMessage('تم تحديث حالة المهمة', 'success');
+                } catch (e) {
+                    console.error('Update status error:', e);
+                    this.showMessage('حدث خطأ أثناء تحديث الحالة', 'error');
+                }
+            }
+
+            markTaskCompleted(taskId) {
+                this.updateTaskStatus(taskId, 'completed');
             }
             // Employee Dashboard Methods
             updateEmployeeStats() {
@@ -2470,11 +2487,14 @@
                             ${isMyTask ? `<span>من: ${createdByName}</span>` : ''}
                             <span class="task-status ${task.status}">${this.getStatusText(task.status)}</span>
                         </div>
-                        ${isMyTask && task.status === 'active' ? `
+                        ${isMyTask ? `
                             <div class="task-actions">
-                                <button class="btn btn-primary" onclick="system.markTaskCompleted('${task.id}')">
+                                ${task.status !== 'completed' ? `<button class="btn btn-secondary" onclick="system.updateTaskStatus('${task.id}', 'in_progress')">
+                                    <i class="fas fa-play"></i> قيد التنفيذ
+                                </button>` : ''}
+                                ${task.status !== 'completed' ? `<button class="btn btn-primary" onclick="system.markTaskCompleted('${task.id}')">
                                     <i class="fas fa-check"></i> تم الإنجاز
-                                </button>
+                                </button>` : ''}
                             </div>
                         ` : ''}
                         ${task.status === 'completed' && task.completedAt ? `
