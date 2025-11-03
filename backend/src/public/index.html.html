@@ -1299,8 +1299,8 @@
                 const userType = this.currentUser.type || this.currentUser.user_type || 'employee';
                 this.currentUser.type = userType;
                 
-                // Load users from database for all dashboards
-                if (this.token) {
+                // Load users from database for admin/assistant only
+                if (this.token && (userType === 'admin' || userType === 'assistant')) {
                     await this.fetchUsersFromAPI();
                 }
                 
@@ -1864,26 +1864,58 @@
                 `;
             }
 
-            viewTaskDetails(taskId) {
-                const task = this.tasks.find(t => t.id === taskId);
+            async viewTaskDetails(taskId) {
+                // Find locally (coerce id equality), fallback to API for admin
+                let task = this.tasks.find(t => t.id == taskId);
+                let assignedUserName = 'غير محدد';
+                let createdByName = 'غير محدد';
+
+                if (this.token) {
+                    try {
+                        // Attempt to enrich via API (admin authorized)
+                        const resp = await fetch(`/api/tasks/${taskId}`, { headers: { 'Authorization': `Bearer ${this.token}` } });
+                        if (resp.ok) {
+                            const j = await resp.json();
+                            const tt = j.task;
+                            task = task || {
+                                id: tt.id,
+                                title: tt.title,
+                                description: tt.description || '',
+                                assignedTo: tt.user_id,
+                                week: this.computeWeekFromDate(tt.week_start || tt.created_at),
+                                priority: 'medium',
+                                status: tt.status === 'completed' ? 'completed' : 'active',
+                                createdBy: tt.assigned_by,
+                                createdAt: tt.created_at,
+                                completedAt: tt.completed_at || null
+                            };
+                            assignedUserName = tt.user_name || assignedUserName;
+                            createdByName = tt.assigned_by_name || createdByName;
+                        }
+                    } catch {}
+                }
+
                 if (!task) return;
 
-                const assignedUser = this.users.find(u => u.id === task.assignedTo || u.id == task.assignedTo);
-                const createdBy = this.users.find(u => u.id === task.createdBy || u.id == task.createdBy);
-                
-                const assignedUserName = assignedUser ? (assignedUser.name || assignedUser.fullName || assignedUser.email || 'غير محدد') : 'غير محدد';
-                const createdByName = createdBy ? (createdBy.name || createdBy.fullName || createdBy.email || 'غير محدد') : 'غير محدد';
+                // Resolve names from local users if still unknown
+                if (assignedUserName === 'غير محدد') {
+                    const assignedUser = this.users.find(u => u.id === task.assignedTo || u.id == task.assignedTo);
+                    if (assignedUser) assignedUserName = assignedUser.name || assignedUser.fullName || assignedUser.email || 'غير محدد';
+                }
+                if (createdByName === 'غير محدد') {
+                    const createdBy = this.users.find(u => u.id === task.createdBy || u.id == task.createdBy);
+                    if (createdBy) createdByName = createdBy.name || createdBy.fullName || createdBy.email || 'غير محدد';
+                }
 
-                const modal = this.createModal('تفاصيل المهمة', `
+                this.createModal('تفاصيل المهمة', `
                     <div class="task-details">
                         <h4>${task.title}</h4>
                         <p><strong>الوصف:</strong> ${task.description}</p>
                         <p><strong>الموظف المسؤول:</strong> ${assignedUserName}</p>
-                        ${assignedUser && assignedUser.department ? `<p><strong>القسم:</strong> ${this.getDepartmentName(assignedUser.department)}</p>` : ''}
-                        <p><strong>أُنشئت بواسطة:</strong> ${createdByName}</p>
                         <p><strong>الأسبوع:</strong> ${task.week}</p>
                         <p><strong>الأولوية:</strong> ${this.getPriorityText(task.priority)}</p>
                         <p><strong>الحالة:</strong> ${this.getStatusText(task.status)}</p>
+                        <p><strong>أُنشئت بواسطة:</strong> ${createdByName}</p>
                         <p><strong>تاريخ الإنشاء:</strong> ${new Date(task.createdAt).toLocaleDateString('ar-EG')}</p>
                         ${task.completedAt ? `<p><strong>تاريخ الإنجاز:</strong> ${new Date(task.completedAt).toLocaleDateString('ar-EG')}</p>` : ''}
                     </div>

@@ -148,8 +148,8 @@ async function getAllUsers(req, res) {
       currentUser = await dbModule.getAsync('SELECT user_type FROM users WHERE id = ?', [currentUserId]);
     }
     
-    if (!currentUser || currentUser.user_type !== 'admin') {
-      return res.status(403).json({ error: 'forbidden - admin access required' });
+    if (!currentUser || (currentUser.user_type !== 'admin' && currentUser.user_type !== 'assistant')) {
+      return res.status(403).json({ error: 'forbidden - admin or assistant access required' });
     }
     
     // Get all users
