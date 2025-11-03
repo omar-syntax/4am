@@ -92,7 +92,29 @@ if (MYSQL_URL || (DATABASE_URL && DATABASE_URL.startsWith('mysql://'))) {
       console.log('⚠️ Admin account check/creation:', err.message);
     }
     
-    console.log('MySQL DB initialized - Users table created');
+    // Create tasks table with necessary columns
+    await connection.execute(`
+      CREATE TABLE IF NOT EXISTS tasks (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        user_id INT,
+        title TEXT NOT NULL,
+        description TEXT,
+        status VARCHAR(20) DEFAULT 'pending',
+        completed_at DATETIME NULL,
+        week_start DATE NULL,
+        assigned_by INT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT fk_tasks_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+        CONSTRAINT fk_tasks_assigned_by FOREIGN KEY (assigned_by) REFERENCES users(id) ON DELETE SET NULL
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    `);
+    // MySQL migrations: add columns if they don't exist
+    try { await connection.execute('ALTER TABLE tasks ADD COLUMN status VARCHAR(20) DEFAULT "pending"'); } catch (e) {}
+    try { await connection.execute('ALTER TABLE tasks ADD COLUMN completed_at DATETIME NULL'); } catch (e) {}
+    try { await connection.execute('ALTER TABLE tasks ADD COLUMN week_start DATE NULL'); } catch (e) {}
+    try { await connection.execute('ALTER TABLE tasks ADD COLUMN assigned_by INT NULL'); } catch (e) {}
+
+    console.log('MySQL DB initialized - Users and Tasks tables ensured');
   }
 
   module.exports = { 
@@ -135,9 +157,18 @@ if (MYSQL_URL || (DATABASE_URL && DATABASE_URL.startsWith('mysql://'))) {
         user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
         title TEXT NOT NULL,
         description TEXT,
+        status VARCHAR(20) DEFAULT 'pending',
+        completed_at TIMESTAMP NULL,
+        week_start DATE NULL,
+        assigned_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
         created_at TIMESTAMP DEFAULT NOW()
       )
     `);
+    // Postgres migrations: add columns if they don't exist
+    await pool.query(`ALTER TABLE IF EXISTS tasks ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'pending'`);
+    await pool.query(`ALTER TABLE IF EXISTS tasks ADD COLUMN IF NOT EXISTS completed_at TIMESTAMP NULL`);
+    await pool.query(`ALTER TABLE IF EXISTS tasks ADD COLUMN IF NOT EXISTS week_start DATE NULL`);
+    await pool.query(`ALTER TABLE IF EXISTS tasks ADD COLUMN IF NOT EXISTS assigned_by INTEGER REFERENCES users(id) ON DELETE SET NULL`);
     
     // Create admin account if it doesn't exist
     try {
@@ -268,9 +299,25 @@ if (MYSQL_URL || (DATABASE_URL && DATABASE_URL.startsWith('mysql://'))) {
       user_id INTEGER,
       title TEXT NOT NULL,
       description TEXT,
+      status TEXT DEFAULT 'pending',
+      completed_at DATETIME NULL,
+      week_start DATE NULL,
+      assigned_by INTEGER NULL,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+      FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY(assigned_by) REFERENCES users(id) ON DELETE SET NULL
     );`);
+    // SQLite migrations: add columns if they don't exist
+    try {
+      const taskInfo = await allAsync('PRAGMA table_info(tasks)');
+      const tcols = taskInfo.map(c => c.name);
+      if (!tcols.includes('status')) await runAsync('ALTER TABLE tasks ADD COLUMN status TEXT DEFAULT "pending"');
+      if (!tcols.includes('completed_at')) await runAsync('ALTER TABLE tasks ADD COLUMN completed_at DATETIME NULL');
+      if (!tcols.includes('week_start')) await runAsync('ALTER TABLE tasks ADD COLUMN week_start DATE NULL');
+      if (!tcols.includes('assigned_by')) await runAsync('ALTER TABLE tasks ADD COLUMN assigned_by INTEGER NULL');
+    } catch (e) {
+      console.log('⚠️ Tasks migration (sqlite):', e.message);
+    }
     console.log('SQLite DB initialized at', dbPath);
   }
   module.exports = { init, runAsync, allAsync, getAsync };
