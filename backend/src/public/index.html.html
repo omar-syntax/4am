@@ -1214,6 +1214,7 @@
                         });
                         if (response.ok) {
                             const data = await response.json();
+                            console.log('API /api/tasks returned', (data.tasks||[]).length, 'tasks');
                             const apiTasks = data.tasks || [];
                             // Map API tasks (DB shape) -> UI shape
                             this.tasks = apiTasks.map(t => ({
@@ -1228,6 +1229,7 @@
                                 createdAt: t.created_at,
                                 completedAt: t.completed_at || null
                             }));
+                            console.log('Mapped tasks for UI. My tasks count:', this.tasks.filter(t => t.assignedTo == (this.currentUser&&this.currentUser.id)).length);
                             this.saveTasks();
                         }
                     } catch (error) {
@@ -1432,6 +1434,22 @@
             showEmployeeDashboard() {
                 this.hideAllSections();
                 document.getElementById('employeeDashboard').classList.remove('hidden');
+                // If no tasks in current selected week, auto-switch to first available week for this user
+                try {
+                    const myTasks = (this.tasks || []).filter(t => t.assignedTo == this.currentUser.id);
+                    if (myTasks.length > 0) {
+                        const hasInSelected = myTasks.some(t => parseInt(t.week) === this.selectedWeek);
+                        if (!hasInSelected) {
+                            const firstWeek = parseInt(myTasks[0].week) || this.currentWeek;
+                            this.selectedWeek = firstWeek;
+                            const targetTab = document.querySelector(`[data-week="${firstWeek}"]`);
+                            if (targetTab) {
+                                document.querySelectorAll('.week-tab').forEach(tab => tab.classList.remove('active'));
+                                targetTab.classList.add('active');
+                            }
+                        }
+                    }
+                } catch (e) { /* noop */ }
                 this.updateEmployeeStats();
                 this.loadWeeklyTasks();
                 this.loadIncentives();
