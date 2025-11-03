@@ -2185,7 +2185,7 @@
             }
             // Assistant Dashboard Methods
             updateAssistantStats() {
-                const createdTasks = this.tasks.filter(t => t.createdBy === this.currentUser.id);
+                const createdTasks = this.tasks.filter(t => t.createdBy == this.currentUser.id);
                 const assignedEmployees = new Set(createdTasks.map(t => t.assignedTo)).size;
                 const completedTasks = createdTasks.filter(t => t.status === 'completed');
 
@@ -2207,7 +2207,7 @@
             }
 
             loadAssistantMyTasks() {
-                const myTasks = this.tasks.filter(t => t.assignedTo === this.currentUser.id);
+                const myTasks = this.tasks.filter(t => t.assignedTo == this.currentUser.id);
                 const myTasksList = document.getElementById('assistantMyTasksList');
 
                 if (myTasks.length === 0) {
@@ -2402,7 +2402,7 @@
             }
             // Employee Dashboard Methods
             updateEmployeeStats() {
-                const myTasks = this.tasks.filter(t => t.assignedTo === this.currentUser.id);
+                const myTasks = this.tasks.filter(t => t.assignedTo == this.currentUser.id);
                 const completedTasks = myTasks.filter(t => t.status === 'completed');
                 const pendingTasks = myTasks.filter(t => t.status === 'active');
                 const myIncentives = this.incentives.filter(i => i.userId === this.currentUser.id);
@@ -2415,7 +2415,7 @@
 
             loadWeeklyTasks() {
                 const weeklyTasks = this.tasks.filter(t =>
-                    t.assignedTo === this.currentUser.id &&
+                    t.assignedTo == this.currentUser.id &&
                     parseInt(t.week) === this.selectedWeek
                 );
 
