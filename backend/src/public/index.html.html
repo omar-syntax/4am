@@ -1214,7 +1214,20 @@
                         });
                         if (response.ok) {
                             const data = await response.json();
-                            this.tasks = data.tasks || [];
+                            const apiTasks = data.tasks || [];
+                            // Map API tasks (DB shape) -> UI shape
+                            this.tasks = apiTasks.map(t => ({
+                                id: t.id,
+                                title: t.title,
+                                description: t.description || '',
+                                assignedTo: t.user_id || t.assignedTo || null,
+                                week: this.computeWeekFromDate(t.week_start || t.created_at),
+                                priority: 'medium',
+                                status: t.status === 'completed' ? 'completed' : 'active',
+                                createdBy: t.assigned_by || this.currentUser?.id || null,
+                                createdAt: t.created_at,
+                                completedAt: t.completed_at || null
+                            }));
                             this.saveTasks();
                         }
                     } catch (error) {
@@ -1222,6 +1235,19 @@
                     }
                 }
             }
+
+            computeWeekFromDate(dateStr) {
+                try {
+                    if (!dateStr) return this.getCurrentWeek();
+                    const d = new Date(dateStr);
+                    const startOfMonth = new Date(d.getFullYear(), d.getMonth(), 1);
+                    const day = d.getDate();
+                    return Math.max(1, Math.min(5, Math.ceil(day / 7)));
+                } catch {
+                    return this.getCurrentWeek();
+                }
+            }
+
             async initializeAdmin() {
                 // Admin account is created in the database automatically
                 // This is just for frontend localStorage compatibility
@@ -2205,30 +2231,125 @@
                 });
             }
 
-            createEmployeeTask(e) {
-                const task = {
-                    id: this.generateId(),
-                    title: document.getElementById('empTaskTitle').value,
-                    description: document.getElementById('empTaskDescription').value,
-                    assignedTo: document.getElementById('empAssignTo').value,
-                    week: document.getElementById('empTaskWeek').value,
-                    priority: document.getElementById('empTaskPriority').value,
-                    status: 'active',
-                    createdBy: this.currentUser.id,
-                    createdAt: new Date().toISOString()
-                };
+            getWeekStartDateFromSelection(weekNumber) {
+                const now = new Date();
+                const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+                const date = new Date(startOfMonth);
+                date.setDate(startOfMonth.getDate() + (Number(weekNumber) - 1) * 7);
+                // Normalize to YYYY-MM-DD
+                const yyyy = date.getFullYear();
+                const mm = String(date.getMonth() + 1).padStart(2, '0');
+                const dd = String(date.getDate()).padStart(2, '0');
+                return `${yyyy}-${mm}-${dd}`;
+            }
 
-                this.tasks.push(task);
-                this.saveTasks();
-                this.showMessage('تم إنشاء المهمة بنجاح', 'success');
-                this.updateAssistantStats();
-                this.loadCreatedTasks();
+            async createEmployeeTask(e) {
+                const title = document.getElementById('empTaskTitle').value;
+                const description = document.getElementById('empTaskDescription').value;
+                const user_id = document.getElementById('empAssignTo').value;
+                const week = document.getElementById('empTaskWeek').value;
+                const priority = document.getElementById('empTaskPriority').value;
+                const week_start = this.getWeekStartDateFromSelection(week);
 
-                // Update admin dashboard if it's currently visible
-                this.updateAdminStats();
-                if (document.getElementById('adminDashboard') && !document.getElementById('adminDashboard').classList.contains('hidden')) {
-                    this.loadAdminActiveTasks();
+                if (!this.token) {
+                    this.showMessage('يجب تسجيل الدخول أولاً', 'error');
+                    return;
                 }
+
+                try {
+                    // Call backend to persist
+                    const response = await fetch('/api/tasks/assign', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${this.token}`
+                        },
+                        body: JSON.stringify({ user_id: Number(user_id), title, description, week_start })
+                    });
+                    const data = await response.json();
+                    if (!response.ok) {
+                        this.showMessage(data.error || 'فشل إنشاء المهمة', 'error');
+                        return;
+                    }
+
+                    // Update UI model from API response
+                    const t = data.task;
+                    const task = {
+                        id: t.id,
+                        title: t.title,
+                        description: t.description || '',
+                        assignedTo: t.user_id || user_id,
+                        week: this.computeWeekFromDate(t.week_start || week_start),
+                        priority: priority || 'medium',
+                        status: t.status === 'completed' ? 'completed' : 'active',
+                        createdBy: t.assigned_by || this.currentUser.id,
+                        createdAt: t.created_at,
+                        completedAt: t.completed_at || null
+                    };
+                    this.tasks.push(task);
+                    this.saveTasks();
+                    this.showMessage('تم إنشاء المهمة بنجاح', 'success');
+                    this.updateAssistantStats();
+                    this.loadCreatedTasks();
+                    this.updateAdminStats();
+                    this.loadAdminActiveTasks();
+                } catch (error) {
+                    console.error('Error creating employee task:', error);
+                    this.showMessage('حدث خطأ أثناء إنشاء المهمة', 'error');
+                }
+            }
+
+            selectWeek(week) {
+                this.selectedWeek = week;
+
+                // Update active tab (guard against missing element)
+                document.querySelectorAll('.week-tab').forEach(tab => {
+                    tab.classList.remove('active');
+                });
+                const targetTab = document.querySelector(`[data-week="${week}"]`);
+                if (targetTab) targetTab.classList.add('active');
+
+                // Load tasks for selected week
+                this.loadWeeklyTasks();
+            }
+
+            markTaskCompleted(taskId) {
+                const token = this.token;
+                if (!token) {
+                    this.showMessage('يجب تسجيل الدخول أولاً', 'error');
+                    return;
+                }
+                // Find task for optimistic UI update
+                const idx = this.tasks.findIndex(t => t.id == taskId);
+                const doLocalUpdate = () => {
+                    if (idx !== -1) {
+                        this.tasks[idx].status = 'completed';
+                        this.tasks[idx].completedAt = new Date().toISOString();
+                        this.saveTasks();
+                    }
+                    if (this.currentUser.type === 'employee') {
+                        this.updateEmployeeStats();
+                        this.loadWeeklyTasks();
+                    } else if (this.currentUser.type === 'assistant') {
+                        this.updateAssistantStats();
+                        this.loadAssistantMyTasks();
+                    }
+                    this.updateAdminStats();
+                    if (document.getElementById('adminDashboard') && !document.getElementById('adminDashboard').classList.contains('hidden')) {
+                        this.loadAdminActiveTasks();
+                    }
+                };
+                // Call backend to persist completion
+                fetch(`/api/tasks/${taskId}/complete`, {
+                    method: 'PATCH',
+                    headers: { 'Authorization': `Bearer ${token}` }
+                }).then(res => res.json().catch(() => ({}))).then(j => {
+                    doLocalUpdate();
+                    this.loadTasksFromAPI();
+                }).catch(err => {
+                    console.error('Error completing task:', err);
+                    doLocalUpdate();
+                });
             }
             // Employee Dashboard Methods
             updateEmployeeStats() {
@@ -2241,19 +2362,6 @@
                 document.getElementById('employeeCompletedTasks').textContent = completedTasks.length;
                 document.getElementById('pendingTasks').textContent = pendingTasks.length;
                 document.getElementById('totalIncentives').textContent = myIncentives.length;
-            }
-
-            selectWeek(week) {
-                this.selectedWeek = week;
-
-                // Update active tab
-                document.querySelectorAll('.week-tab').forEach(tab => {
-                    tab.classList.remove('active');
-                });
-                document.querySelector(`[data-week="${week}"]`).classList.add('active');
-
-                // Load tasks for selected week
-                this.loadWeeklyTasks();
             }
 
             loadWeeklyTasks() {
@@ -2345,30 +2453,6 @@
                         ` : ''}
                     </div>
                 `;
-            }
-            markTaskCompleted(taskId) {
-                const taskIndex = this.tasks.findIndex(t => t.id === taskId);
-                if (taskIndex !== -1) {
-                    this.tasks[taskIndex].status = 'completed';
-                    this.tasks[taskIndex].completedAt = new Date().toISOString();
-                    this.saveTasks();
-                    this.showMessage('تم إنجاز المهمة بنجاح', 'success');
-
-                    // Refresh current dashboard
-                    if (this.currentUser.type === 'employee') {
-                        this.updateEmployeeStats();
-                        this.loadWeeklyTasks();
-                    } else if (this.currentUser.type === 'assistant') {
-                        this.updateAssistantStats();
-                        this.loadAssistantMyTasks();
-                    }
-
-                    // Update admin stats if admin is viewing
-                    this.updateAdminStats();
-                    if (document.getElementById('adminDashboard') && !document.getElementById('adminDashboard').classList.contains('hidden')) {
-                        this.loadAdminActiveTasks();
-                    }
-                }
             }
 
             async fetchUsersFromAPI() {
